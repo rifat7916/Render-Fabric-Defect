@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric Defect Detector</title>
+    <!-- Load Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+            background-image: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%);
+        }
+        /* Style for drag-over effect */
+        .drag-over {
+            border-color: #3b82f6; /* Blue border */
+            background-color: #eff6ff; /* Lighter blue background */
+        }
+        /* Loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3b82f6; /* Blue */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Result styling */
+        .result-box {
+            transition: all 0.3s ease-in-out;
+        }
+    </style>
+     <!-- Font awesome for icons -->
+     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" xintegrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div class="bg-white rounded-xl shadow-2xl p-6 sm:p-8 md:p-10 w-full max-w-lg text-center">
+        
+        <!-- Header -->
+        <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">
+            <i class="fas fa-microscope text-blue-500 mr-2"></i> Fabric Defect Detector
+        </h1>
+        <p class="text-gray-600 mb-6 sm:mb-8">
+            Upload or drag & drop a fabric image to check for defects.
+        </p>
+
+        <!-- Image Upload Area -->
+        <div id="drop-zone" class="border-4 border-dashed border-gray-300 rounded-lg p-6 sm:p-10 cursor-pointer hover:border-blue-400 transition-colors duration-300">
+            <input type="file" id="file-input" class="hidden" accept="image/png, image/jpeg, image/jpg">
+            <div class="flex flex-col items-center">
+                <i class="fas fa-cloud-arrow-up text-5xl text-gray-400 mb-4"></i>
+                <p class="text-gray-500 font-semibold">Drag & Drop Image Here</p>
+                <p class="text-gray-400 text-sm my-2">or</p>
+                <button id="browse-button" type="button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                    Browse File
+                </button>
+                 <p id="file-name" class="text-sm text-gray-500 mt-3"></p>
+            </div>
+        </div>
+
+        <!-- Image Preview -->
+        <div id="image-preview-container" class="mt-6 sm:mt-8" style="display: none;">
+             <h2 class="text-lg font-semibold text-gray-700 mb-2">Image Preview:</h2>
+             <img id="image-preview" src="#" alt="Image Preview" class="max-w-full h-auto max-h-60 mx-auto rounded-lg shadow-md"/>
+        </div>
+
+         <!-- Prediction Button -->
+        <button id="predict-button" class="mt-6 sm:mt-8 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300 flex items-center justify-center text-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+             <i class="fas fa-flask-vial mr-2"></i> Predict Defect
+        </button>
+        
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="mt-6" style="display: none;">
+            <div class="loader mx-auto"></div>
+            <p class="text-gray-600 mt-2 font-semibold">Analyzing image...</p>
+        </div>
+
+        <!-- Result Display -->
+        <div id="result-display" class="result-box mt-6 sm:mt-8 p-4 sm:p-6 rounded-lg bg-gray-50 border border-gray-200" style="display: none;">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">Prediction Result:</h2>
+            <p id="prediction-text" class="text-2xl font-semibold"></p>
+            <p id="confidence-text" class="text-gray-600 mt-1"></p>
+        </div>
+
+        <!-- Error Display -->
+        <div id="error-display" class="result-box mt-6 sm:mt-8 p-4 sm:p-6 rounded-lg bg-red-50 border border-red-300 text-red-700 font-semibold" style="display: none;">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <span id="error-text"></span>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Get DOM Elements ---
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const browseButton = document.getElementById('browse-button');
+        const fileNameDisplay = document.getElementById('file-name');
+        const imagePreviewContainer = document.getElementById('image-preview-container');
+        const imagePreview = document.getElementById('image-preview');
+        const predictButton = document.getElementById('predict-button');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const resultDisplay = document.getElementById('result-display');
+        const predictionText = document.getElementById('prediction-text');
+        const confidenceText = document.getElementById('confidence-text');
+        const errorDisplay = document.getElementById('error-display');
+        const errorText = document.getElementById('error-text');
+
+        let currentFile = null;
+
+        // --- Event Listeners ---
+
+        browseButton.addEventListener('click', () => {
+            fileInput.click(); // Trigger the hidden file input
+        });
+
+        // --- *** CHANGE IS HERE *** ---
+        // Handle file selection from BOTH browse and drag/drop
+        fileInput.addEventListener('change', handleFiles);
+        dropZone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            dropZone.classList.remove('drag-over');
+            handleFiles(event); // Pass the event to the handler
+        });
+        // --- *** END OF CHANGE *** ---
+
+        dropZone.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        predictButton.addEventListener('click', handlePrediction);
+
+
+        // --- Helper Functions ---
+
+        // --- *** NEW UNIFIED FILE HANDLER *** ---
+        function handleFiles(event) {
+            resetUI(); // Clear previous state first
+
+            let files;
+            // Check if files come from input change or drop event
+            if (event.type === 'change') {
+                files = event.target.files;
+                console.log("Files from input change:", files);
+            } else if (event.type === 'drop') {
+                files = event.dataTransfer.files;
+                console.log("Files from drop:", files);
+            } else {
+                console.error("Unknown event type in handleFiles:", event.type);
+                return; // Should not happen
+            }
+            
+            if (!files || files.length === 0) {
+                console.log("handleFiles: No files found.");
+                return;
+            }
+
+            const file = files[0]; // Process only the first file
+            console.log("Processing file:", file.name, file.type);
+
+            if (!file.type.startsWith('image/')) {
+                showError("Invalid file type. Please upload an image (JPEG, PNG, JPG).");
+                return;
+            }
+            
+            currentFile = file; // Store the file for prediction
+            fileNameDisplay.textContent = `Selected: ${file.name}`; // Show filename
+            
+            // --- Show Image Preview ---
+            try {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    if (e.target && e.target.result) {
+                        imagePreview.src = e.target.result;
+                        imagePreviewContainer.style.display = 'block'; // Make preview visible
+                        predictButton.disabled = false; // Enable prediction button
+                        console.log("Image preview loaded and predict button enabled.");
+                    } else {
+                        console.error("FileReader onload event error: event target or result missing.");
+                        showError("Could not read file for preview.");
+                    }
+                };
+                reader.onerror = function(e) {
+                    console.error("FileReader error:", e);
+                    showError("Error reading the selected file.");
+                    resetUI(); // Reset if reading fails
+                };
+                reader.readAsDataURL(file); // Start reading
+            } catch (error) {
+                 console.error("Error setting up FileReader:", error);
+                 showError(`An error occurred while trying to preview the file: ${error.message}`);
+                 resetUI();
+            }
+        }
+        // --- *** END OF NEW HANDLER *** ---
+
+
+        // --- handlePrediction, showResult, showError, resetUI are mostly unchanged ---
+        async function handlePrediction() {
+            if (!currentFile) {
+                showError("No file selected.");
+                return;
+            }
+            predictButton.disabled = true;
+            loadingIndicator.style.display = 'block';
+            resultDisplay.style.display = 'none';
+            errorDisplay.style.display = 'none';
+            predictButton.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Predicting...`;
+            const formData = new FormData();
+            formData.append('file', currentFile);
+            try {
+                const response = await fetch('/predict', { method: 'POST', body: formData });
+                const result = await response.json();
+                loadingIndicator.style.display = 'none';
+                predictButton.innerHTML = `<i class="fas fa-flask-vial mr-2"></i> Predict Defect`;
+                // Keep predict button enabled unless resetUI is called
+                predictButton.disabled = false; 
+                if (response.ok) {
+                    showResult(result.prediction, result.confidence);
+                } else {
+                    showError(result.error || `Server error: ${response.status}`);
+                }
+            } catch (error) {
+                console.error("Prediction fetch error:", error);
+                loadingIndicator.style.display = 'none';
+                predictButton.innerHTML = `<i class="fas fa-flask-vial mr-2"></i> Predict Defect`;
+                predictButton.disabled = false;
+                showError(`Network error or failed to connect to server: ${error.message}`);
+            }
+        }
+
+        function showResult(prediction, confidence) {
+            predictionText.textContent = `${prediction}`;
+            // Adjust confidence display if needed (e.g., format percentage)
+            confidenceText.textContent = `Confidence: ${parseFloat(confidence).toFixed(2)}%`; 
+            
+            // --- Simplified Result Styling ---
+            let isDefect = ['hole', 'horizontal', 'verticle'].includes(prediction.toLowerCase());
+            
+            predictionText.className = `text-2xl font-semibold ${isDefect ? 'text-red-600' : 'text-green-600'}`;
+            resultDisplay.className = `result-box mt-6 sm:mt-8 p-4 sm:p-6 rounded-lg ${isDefect ? 'bg-red-50 border border-red-300' : 'bg-green-50 border border-green-300'}`;
+            // --- End Simplified Styling ---
+
+            resultDisplay.style.display = 'block';
+            errorDisplay.style.display = 'none';
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorDisplay.style.display = 'block';
+            resultDisplay.style.display = 'none';
+            loadingIndicator.style.display = 'none';
+            predictButton.innerHTML = `<i class="fas fa-flask-vial mr-2"></i> Predict Defect`;
+             // Only disable predict button if there's genuinely no file
+            predictButton.disabled = !currentFile; 
+        }
+
+        function resetUI() {
+             fileNameDisplay.textContent = '';
+             currentFile = null;
+             // Don't reset fileInput.value here for browse, let the browser manage it
+             // fileInput.value = ''; 
+             imagePreviewContainer.style.display = 'none';
+             imagePreview.src = '#'; // Reset image src
+             resultDisplay.style.display = 'none';
+             errorDisplay.style.display = 'none';
+             loadingIndicator.style.display = 'none';
+             predictButton.disabled = true; // Disable predict until a new file is confirmed
+             predictButton.innerHTML = `<i class="fas fa-flask-vial mr-2"></i> Predict Defect`;
+             console.log("UI Reset.");
+        }
+
+    </script>
+</body>
+</html>
+
